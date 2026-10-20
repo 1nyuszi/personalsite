@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\PageController;
+use App\Models\ContactMessage;
 use App\Models\Guestbook;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
@@ -8,6 +9,7 @@ use Illuminate\Support\Facades\Route;
 // 1. Static / Feature Routes (Must come BEFORE /{slug})
 Route::get('/guestbook', function () {
     $entries = Guestbook::where('is_approved', true)->latest()->get();
+
     return view('guestbook', compact('entries'));
 })->name('guestbook.index');
 
@@ -37,7 +39,7 @@ Route::post('/contact', function (Request $request) {
         'message' => 'required|string|max:2000',
     ]);
 
-    \App\Models\ContactMessage::create($validated);
+    ContactMessage::create($validated);
 
     return redirect()->route('contact.create')->with('success', 'Your message has been sent successfully!');
 })->name('contact.store');

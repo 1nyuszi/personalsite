@@ -5,19 +5,17 @@ namespace App\Filament\Resources\Guestbooks;
 use App\Filament\Resources\Guestbooks\Pages\CreateGuestbook;
 use App\Filament\Resources\Guestbooks\Pages\EditGuestbook;
 use App\Filament\Resources\Guestbooks\Pages\ListGuestbooks;
-use App\Filament\Resources\Guestbooks\Schemas\GuestbookForm;
-use App\Filament\Resources\Guestbooks\Tables\GuestbooksTable;
 use App\Models\Guestbook;
 use BackedEnum;
+use Filament\Forms\Components\Textarea;
+use Filament\Forms\Components\TextInput;
+use Filament\Forms\Components\Toggle;
 use Filament\Resources\Resource;
 use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
-use Filament\Tables\Table;
-use Filament\Forms\Components\TextInput;
-use Filament\Forms\Components\Textarea;
-use Filament\Forms\Components\Toggle;
-use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Columns\IconColumn;
+use Filament\Tables\Columns\TextColumn;
+use Filament\Tables\Table;
 
 class GuestbookResource extends Resource
 {
