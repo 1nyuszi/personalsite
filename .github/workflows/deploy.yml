@@ -1,12 +1,18 @@
-name: Deploy Laravel CMS to Shared Hosting
+name: Check and Deploy Laravel CMS
 
 on:
   push:
     branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
 
 jobs:
-  web-deploy:
-    name: Build and Deploy
+  checks:
+    name: Pint, PHPStan and Pest
     runs-on: ubuntu-latest
     steps:
       - name: Get latest code
@@ -16,20 +22,85 @@ jobs:
         uses: shivammathur/setup-php@v2
         with:
           php-version: '8.5'
+          extensions: mbstring, intl, pdo_sqlite
+          coverage: none
           tools: composer
 
-      - name: Install Composer dependencies
-        run: composer install --no-dev --optimize-autoloader --prefer-dist
+      - name: Prepare testing environment
+        run: cp .env.example .env
+
+      - name: Install Composer dependencies including development tools
+        run: composer install --no-interaction --prefer-dist --no-progress
+
+      - name: Generate testing application key
+        run: php artisan key:generate --no-interaction
+
+      - name: Check formatting with Pint
+        run: vendor/bin/pint --test
+
+      - name: Analyse code with PHPStan
+        run: vendor/bin/phpstan analyse --no-progress --memory-limit=1G
+
+      - name: Run tests with Pest
+        run: vendor/bin/pest
+
+  web-deploy:
+    name: Build and Deploy
+    needs: checks
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    concurrency:
+      group: production-deploy
+      cancel-in-progress: false
+    steps:
+      - name: Get latest code
+        uses: actions/checkout@v4
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.5'
+          extensions: mbstring, intl, pdo_mysql
+          coverage: none
+          tools: composer
+
+      - name: Install production Composer dependencies
+        run: composer install --no-dev --no-interaction --optimize-autoloader --prefer-dist --no-progress
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: '22'
+          cache: npm
 
       - name: Install NPM dependencies and build assets
         run: |
-          npm install
+          npm ci
           npm run build
+
+      - name: Prepare deployment files
+        run: |
+          mkdir -p deploy
+          rsync -a app bootstrap config database public resources routes storage vendor artisan composer.json composer.lock deploy/ \
+            --exclude='bootstrap/cache/*.php' \
+            --exclude='database/*.sqlite*' \
+            --exclude='public/hot' \
+            --exclude='public/storage' \
+            --exclude='storage/***'
+
+      # Store the complete hosting .env in this secret, including the existing
+      # APP_KEY, APP_ENV=production, APP_DEBUG=false, APP_URL and DB_* values.
+      # Write it after the build so hosting credentials are never used by Vite.
+      - name: Write production environment
+        env:
+          PRODUCTION_ENV: ${{ secrets.PRODUCTION_ENV }}
+        run: |
+          if [ -z "$PRODUCTION_ENV" ]; then
+            echo 'The PRODUCTION_ENV repository secret is required.' >&2
+            exit 1
+          fi
+          umask 077
+          printf '%s\n' "$PRODUCTION_ENV" > deploy/.env
 
       - name: Sync files to server via FTP
         uses: SamKirkland/FTP-Deploy-Action@v4.3.5
@@ -37,4 +108,17 @@ jobs:
           server: ${{ secrets.FTP_SERVER }}
           username: ${{ secrets.FTP_USERNAME }}
           password: ${{ secrets.FTP_PASSWORD }}
-          server-dir: ./public_html/ # Or your target directory depending on hosting setup
+          local-dir: ./deploy/
+          # Relative to the FTP login directory; custom paths must end in /.
+          # The domain document root must point to this directory's public/.
+          server-dir: ${{ vars.FTP_SERVER_DIR || './' }}
+          exclude: |
+            **/.git*
+            **/.git*/**
+            **/node_modules/**
+            storage/**
+            public/storage/**
+
+      - name: Remove production environment from runner
+        if: always()
+        run: rm -f deploy/.env
